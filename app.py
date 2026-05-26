@@ -1,10 +1,9 @@
 import streamlit as st
 import requests
-import xml.etree.ElementTree as ET
+import re
 from PIL import Image
 import io
 import base64
-import json
 
 st.set_page_config(
     page_title="eBay 出品ツール",
@@ -135,11 +134,13 @@ with st.sidebar:
                 }, timeout=10)
                 if "Success" in resp.text:
                     st.success("✅ 接続成功！")
-                else:
-                    root = ET.fromstring(resp.text)
-                    ns = {"e": "urn:ebay:apis:eBLBaseComponents"}
-                    err = root.findtext(".//e:LongMessage", namespaces=ns) or resp.text[:200]
+                elif "Failure" in resp.text or "Error" in resp.text:
+                    # 正規表現でエラーメッセージを抽出（XMLパースを避ける）
+                    m = re.search(r"<LongMessage>(.*?)</LongMessage>", resp.text)
+                    err = m.group(1) if m else resp.text[:300]
                     st.error(f"接続失敗: {err}")
+                else:
+                    st.warning(f"レスポンス受信（要確認）: {resp.text[:200]}")
             except Exception as e:
                 st.error(f"エラー: {e}")
 
@@ -597,17 +598,15 @@ with tab_preview:
                         st.code(resp.text, language="xml")
 
                     if "Success" in resp.text:
-                        root = ET.fromstring(resp.text)
-                        ns = {"e": "urn:ebay:apis:eBLBaseComponents"}
-                        item_id = root.findtext(".//e:ItemID", namespaces=ns)
-                        st.success(f"✅ 出品成功！ アイテムID: {item_id}")
+                        m = re.search(r"<ItemID>(\d+)</ItemID>", resp.text)
+                        item_id = m.group(1) if m else None
+                        st.success(f"✅ 出品成功！ アイテムID: {item_id or '(レスポンス参照)'}")
                         if item_id:
                             base_url = "https://sandbox.ebay.com" if env == "sandbox" else "https://www.ebay.com"
                             st.markdown(f"[eBayで確認する → {base_url}/itm/{item_id}]({base_url}/itm/{item_id})")
                     else:
-                        root = ET.fromstring(resp.text)
-                        ns = {"e": "urn:ebay:apis:eBLBaseComponents"}
-                        err = root.findtext(".//e:LongMessage", namespaces=ns) or "詳細はレスポンスをご確認ください"
+                        m = re.search(r"<LongMessage>(.*?)</LongMessage>", resp.text)
+                        err = m.group(1) if m else "詳細はレスポンスをご確認ください"
                         st.error(f"出品失敗: {err}")
                 except Exception as e:
                     st.error(f"送信エラー: {e}")
